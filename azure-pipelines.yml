@@ -109,7 +109,7 @@ jobs:
   # Step 6: Build Docker Image
   - task: Docker@2
     inputs:
-      containerRegistry: 'docker-service'
+      containerRegistry: 'dokuku'
       repository: 'anime-games-launcher'
       command: 'build'
       Dockerfile: '**/Dockerfile'
@@ -118,7 +118,7 @@ jobs:
   # Step 7: Push Docker Image
   - task: Docker@2
     inputs:
-      containerRegistry: 'docker-service'
+      containerRegistry: 'dokuku'
       repository: 'anime-games-launcher'
       command: 'push'
     displayName: 'Push Docker Image'
