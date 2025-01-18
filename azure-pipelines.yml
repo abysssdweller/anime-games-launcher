@@ -1,0 +1,74 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- main  # Trigger the pipeline on changes to the main branch
+
+pool:
+  vmImage: 'ubuntu-latest'  # Use the latest Ubuntu image for the build agent
+
+variables:
+  buildConfiguration: 'release'  # Define the build configuration (release/debug)
+
+steps:
+# Step 1: Install Rust
+- script: |
+    echo "Installing Rust..."
+    curl https://sh.rustup.rs -sSf | sh -s -- -y
+    export PATH="$HOME/.cargo/bin:$PATH"
+    rustc --version
+  displayName: 'Install Rust'
+
+# Step 2: Restore Dependencies
+- script: |
+    echo "Restoring Rust dependencies..."
+    export PATH="$HOME/.cargo/bin:$PATH"
+    cargo fetch  # Fetch dependencies for the project
+  displayName: 'Restore Dependencies'
+
+# Step 3: Build the Rust Project
+- script: |
+    echo "Building the project..."
+    export PATH="$HOME/.cargo/bin:$PATH"
+    cargo build --release
+  displayName: 'Build Project'
+
+# Step 4: Run Unit Tests
+- script: |
+    echo "Running tests..."
+    export PATH="$HOME/.cargo/bin:$PATH"
+    cargo test --verbose
+  displayName: 'Run Unit Tests'
+
+# Step 5: Perform Static Code Analysis with Clippy
+- script: |
+    echo "Running Clippy for linting..."
+    export PATH="$HOME/.cargo/bin:$PATH"
+    cargo clippy -- -D warnings
+  displayName: 'Static Code Analysis with Clippy'
+
+# Step 6: Validate Fluent Localization Files
+- script: |
+    echo "Validating Fluent files..."
+    ./scripts/validate_fluent.sh  # Custom script to validate `.ftl` files
+  displayName: 'Validate Fluent Files'
+
+# Step 7: Build Docker Image
+- task: Docker@2
+  inputs:
+    containerRegistry: '<yourContainerRegistryServiceConnection>'  # Azure DevOps service connection
+    repository: '<yourDockerRepository>'  # Docker repository name
+    command: 'buildAndPush'
+    Dockerfile: 'Dockerfile'
+    tags: |
+      $(Build.BuildId)  # Use the build ID as the image tag
+  displayName: 'Build and Push Docker Image'
+
+# Step 8: Publish Build Artifacts
+- task: PublishBuildArtifacts@1
+  inputs:
+    pathToPublish: '$(Build.ArtifactStagingDirectory)'  # Specify the directory to publish
+    artifactName: 'drop'  # Name the artifact
+  displayName: 'Publish Build Artifacts'
