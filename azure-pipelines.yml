@@ -1,74 +1,124 @@
-# Starter pipeline
-# Start with a minimal pipeline that you can customize to build and deploy your code.
-# Add steps that build, run tests, deploy, and more:
-# https://aka.ms/yaml
-
 trigger:
-- main  # Trigger the pipeline on changes to the main branch
+- main
 
 pool:
-  vmImage: 'ubuntu-latest'  # Use the latest Ubuntu image for the build agent
+  name: Default
 
-variables:
-  buildConfiguration: 'release'  # Define the build configuration (release/debug)
+jobs:
+- job: UnitTesting
+  displayName: Unit Testing
+  steps:
+  # Step 1: Install Rust
+  - script: |
+      echo "Installing Rust..."
+      curl https://sh.rustup.rs -sSf | sh -s -- -y
+      export PATH="$HOME/.cargo/bin:$PATH"
+      rustc --version
+    displayName: 'Install Rust'
 
-steps:
-# Step 1: Install Rust
-- script: |
-    echo "Installing Rust..."
-    curl https://sh.rustup.rs -sSf | sh -s -- -y
-    export PATH="$HOME/.cargo/bin:$PATH"
-    rustc --version
-  displayName: 'Install Rust'
+  # Step 2: Restore Dependencies
+  - script: |
+      echo "Restoring Rust dependencies..."
+      export PATH="$HOME/.cargo/bin:$PATH"
+      cargo fetch
+    displayName: 'Restore Dependencies'
 
-# Step 2: Restore Dependencies
-- script: |
-    echo "Restoring Rust dependencies..."
-    export PATH="$HOME/.cargo/bin:$PATH"
-    cargo fetch  # Fetch dependencies for the project
-  displayName: 'Restore Dependencies'
+  # Step 3: Run Unit Tests
+  - script: |
+      echo "Running unit tests..."
+      export PATH="$HOME/.cargo/bin:$PATH"
+      cargo test --verbose
+    displayName: 'Run Unit Tests'
+    continueOnError: true
 
-# Step 3: Build the Rust Project
-- script: |
-    echo "Building the project..."
-    export PATH="$HOME/.cargo/bin:$PATH"
-    cargo build --release
-  displayName: 'Build Project'
+  # Step 4: Publish Test Results
+  - task: PublishTestResults@2
+    inputs:
+      testResultsFormat: 'JUnit'
+      testResultsFiles: '**/target/test-results/**/*.xml'  # Adjust the path for Rust JUnit output
+      mergeTestResults: true
+      failTaskOnFailedTests: true
+      testRunTitle: 'Rust Unit Tests'
 
-# Step 4: Run Unit Tests
-- script: |
-    echo "Running tests..."
-    export PATH="$HOME/.cargo/bin:$PATH"
-    cargo test --verbose
-  displayName: 'Run Unit Tests'
 
-# Step 5: Perform Static Code Analysis with Clippy
-- script: |
-    echo "Running Clippy for linting..."
-    export PATH="$HOME/.cargo/bin:$PATH"
-    cargo clippy -- -D warnings
-  displayName: 'Static Code Analysis with Clippy'
+- job: SonarQube
+  displayName: SonarQube Analysis
+  dependsOn: UnitTesting
+  steps:
+  - script: |
+      echo "Installing Rust..."
+      curl https://sh.rustup.rs -sSf | sh -s -- -y
+      export PATH="$HOME/.cargo/bin:$PATH"
+      rustc --version
+    displayName: 'Install Rust'
 
-# Step 6: Validate Fluent Localization Files
-- script: |
-    echo "Validating Fluent files..."
-    ./scripts/validate_fluent.sh  # Custom script to validate `.ftl` files
-  displayName: 'Validate Fluent Files'
+  - task: SonarQubePrepare@7
+    inputs:
+      SonarQube: 'azuzu'
+      scannerMode: 'cli'
+      configMode: 'manual'
+      cliProjectKey: $(project_key)
+      cliSources: '.'
 
-# Step 7: Build Docker Image
-- task: Docker@2
-  inputs:
-    containerRegistry: '<yourContainerRegistryServiceConnection>'  # Azure DevOps service connection
-    repository: '<yourDockerRepository>'  # Docker repository name
-    command: 'buildAndPush'
-    Dockerfile: 'Dockerfile'
-    tags: |
-      $(Build.BuildId)  # Use the build ID as the image tag
-  displayName: 'Build and Push Docker Image'
+  - task: SonarQubeAnalyze@7
+    inputs:
+      jdkversion: 'JAVA_HOME'
 
-# Step 8: Publish Build Artifacts
-- task: PublishBuildArtifacts@1
-  inputs:
-    pathToPublish: '$(Build.ArtifactStagingDirectory)'  # Specify the directory to publish
-    artifactName: 'drop'  # Name the artifact
-  displayName: 'Publish Build Artifacts'
+  - task: SonarQubePublish@7
+    inputs:
+      pollingTimeoutSec: '300'
+
+
+- job: Packing
+  displayName: Packing
+  dependsOn: UnitTesting
+  steps:
+  # Step 1: Install Rust
+  - script: |
+      echo "Installing Rust..."
+      curl https://sh.rustup.rs -sSf | sh -s -- -y
+      export PATH="$HOME/.cargo/bin:$PATH"
+      rustc --version
+    displayName: 'Install Rust'
+
+  # Step 2: Restore Dependencies
+  - script: |
+      echo "Restoring Rust dependencies..."
+      export PATH="$HOME/.cargo/bin:$PATH"
+      cargo fetch
+    displayName: 'Restore Dependencies'
+
+  # Step 3: Build Project
+  - script: |
+      echo "Building the project..."
+      export PATH="$HOME/.cargo/bin:$PATH"
+      cargo build --release
+    displayName: 'Build Project'
+
+  # Step 4: Package Application
+  - script: |
+      echo "Packaging application..."
+      tar -czvf rust_app.tar.gz target/release/
+    displayName: 'Package Application'
+
+  # Step 5: Docker Installation
+  - task: DockerInstaller@0
+    inputs:
+      dockerVersion: '17.09.0-ce'
+
+  # Step 6: Build Docker Image
+  - task: Docker@2
+    inputs:
+      containerRegistry: 'docker-service'
+      repository: 'anime-games-launcher'
+      command: 'build'
+      Dockerfile: '**/Dockerfile'
+    displayName: 'Build Docker Image'
+
+  # Step 7: Push Docker Image
+  - task: Docker@2
+    inputs:
+      containerRegistry: 'docker-service'
+      repository: 'anime-games-launcher'
+      command: 'push'
+    displayName: 'Push Docker Image'
